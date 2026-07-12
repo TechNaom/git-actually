@@ -1,0 +1,102 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main, _reference-end-state]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy-staging:
+    name: Deploy to staging
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install relnotes
+        run: pip install -e .
+
+      - name: Build staging site
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          mkdir -p site
+          relnotes --file relnotes.json render --format markdown > /tmp/changelog.md 2>/dev/null || echo "No entries yet." > /tmp/changelog.md
+          {
+            echo "<!doctype html><html><body>"
+            echo "<h1>relnotes -- STAGING</h1>"
+            echo "<p>Deployed by git-actually's staging gate. RELEASE_TOKEN is set: $([ -n \"$RELEASE_TOKEN\" ] && echo yes || echo no)</p>"
+            echo "<pre>$(cat /tmp/changelog.md)</pre>"
+            echo "</body></html>"
+          } > site/index.html
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload staging artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  deploy-production:
+    name: Deploy to production
+    needs: [deploy-staging]
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install relnotes
+        run: pip install -e .
+
+      - name: Build production site
+        run: |
+          mkdir -p site
+          relnotes --file relnotes.json render --format markdown > /tmp/changelog.md 2>/dev/null || echo "No entries yet." > /tmp/changelog.md
+          {
+            echo "<!doctype html><html><body>"
+            echo "<h1>relnotes -- PRODUCTION</h1>"
+            echo "<pre>$(cat /tmp/changelog.md)</pre>"
+            echo "</body></html>"
+          } > site/index.html
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload production artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

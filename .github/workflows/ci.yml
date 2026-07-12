@@ -7,28 +7,19 @@ on:
     branches: [main]
 
 jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-          cache-dependency-path: requirements-dev.txt
-
-      - name: Install dependencies
-        run: pip install -r requirements-dev.txt
-
-      - name: Run ruff
-        run: ruff check .
-
   test:
-    name: Test
+    name: Test (Python ${{ matrix.python-version }})
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    uses: ./.github/workflows/reusable-lint-test.yml
+    with:
+      python-version: ${{ matrix.python-version }}
+
+  build:
+    name: Build package
+    needs: [test]
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -38,11 +29,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "pip"
-          cache-dependency-path: requirements-dev.txt
 
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
+      - name: Install build tooling
+        run: pip install build
 
-      - name: Run tests
-        run: pytest -v
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relnotes-dist
+          path: dist/
